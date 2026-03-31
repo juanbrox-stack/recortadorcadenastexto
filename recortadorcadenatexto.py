@@ -1,55 +1,65 @@
 import streamlit as st
 import pandas as pd
 
-def recortar_texto(texto, max_caracteres):
-    if pd.isna(texto) or len(str(texto)) <= max_caracteres:
-        return texto
+def recortar_inteligente(texto, limite):
+    # Convertimos a string y manejamos nulos
+    texto_str = str(texto) if pd.notna(texto) else ""
     
-    texto = str(texto)[:max_caracteres]
-    # Buscamos el último punto para que la frase no quede a medias
-    ultimo_punto = texto.rfind('.')
+    # REGLA 1: Si no supera el límite, se queda como está
+    if len(texto_str) <= limite:
+        return texto_str
     
-    if ultimo_punto != -1:
-        return texto[:ultimo_punto + 1]
+    # Recortamos inicialmente al límite para buscar dentro
+    recorte_previo = texto_str[:limite]
+    
+    # REGLA 2: Buscar el último punto o la última coma
+    ultimo_punto = recorte_previo.rfind('.')
+    ultima_coma = recorte_previo.rfind(',')
+    
+    # Determinamos cuál de los dos signos está más cerca del final
+    posicion_corte = max(ultimo_punto, ultima_coma)
+    
+    if posicion_corte != -1:
+        # Retornamos hasta el signo (incluyéndolo) y limpiamos espacios
+        return recorte_previo[:posicion_corte + 1].strip()
     else:
-        # Si no hay puntos, buscamos el último espacio para no cortar una palabra
-        ultimo_espacio = texto.rfind(' ')
-        return texto[:ultimo_espacio] if ultimo_espacio != -1 else texto
+        # REGLA 3: Si no hay signos, buscamos el último espacio para no romper palabras
+        ultimo_espacio = recorte_previo.rfind(' ')
+        return recorte_previo[:ultimo_espacio].strip() if ultimo_espacio != -1 else recorte_previo
 
-# Configuración de la interfaz
-st.set_page_config(page_title="Optimizador de Textos SEO", layout="centered")
-st.title("✂️ Recortador Inteligente de Excel")
-st.write("Sube tu archivo y ajustaremos los textos según el límite de caracteres.")
+# --- Interfaz de Streamlit ---
+st.set_page_config(page_title="SEO Text Optimizer", page_icon="✂️")
 
-# Sidebar para configuración
+st.title("✂️ Optimizador de Títulos y Descripciones")
+st.markdown("""
+Esta herramienta recorta textos automáticamente buscando el **último punto o coma** para que las frases tengan sentido gramatical.
+""")
+
 with st.sidebar:
-    st.header("Configuración")
-    tipo_proceso = st.radio("¿Qué vas a procesar?", ("Título (128 car.)", "Descripción (2000 car.)"))
-    limite = 128 if "Título" in tipo_proceso else 2000
+    st.header("Ajustes")
+    modo = st.radio("Tipo de contenido:", ["Título (128 car.)", "Descripción (2000 car.)"])
+    limite = 128 if "Título" in modo else 2000
 
-# Subida de archivo
-archivo = st.file_uploader("Sube tu archivo Excel (.xlsx)", type=["xlsx"])
+archivo_subido = st.file_uploader("Carga tu Excel", type=["xlsx", "xls"])
 
-if archivo:
-    df = pd.read_excel(archivo)
-    columna = st.selectbox("Selecciona la columna a procesar:", df.columns)
+if archivo_subido:
+    df = pd.read_excel(archivo_subido)
+    columna_objetivo = st.selectbox("Selecciona la columna a recortar:", df.columns)
     
-    if st.button("Procesar y Descargar"):
-        # Aplicamos la lógica de recorte
-        df[f"{columna}_recortado"] = df[columna].apply(lambda x: recortar_texto(x, limite))
+    if st.button("Ejecutar limpieza"):
+        # Aplicamos la función
+        df[f"{columna_objetivo}_OPTIMIZADO"] = df[columna_objetivo].apply(lambda x: recortar_inteligente(x, limite))
         
-        st.success("¡Procesado con éxito!")
-        st.dataframe(df.head()) # Vista previa
-
-        # Botón de descarga
-        @st.cache_data
-        def convertir_df(df_to_convert):
-            return df_to_convert.to_csv(index=False).encode('utf-8')
-
-        csv = convertir_df(df)
+        # Mostramos comparativa de caracteres
+        st.subheader("Vista previa del resultado")
+        # Mostramos solo las columnas relevantes para comparar
+        st.dataframe(df[[columna_objetivo, f"{columna_objetivo}_OPTIMIZADO"]].head(10))
+        
+        # Botón para descargar
+        csv = df.to_csv(index=False).encode('utf-8-sig') # utf-8-sig para que Excel lea bien las tildes
         st.download_button(
-            label="Descargar Excel Procesado (CSV)",
+            label="Descargar archivo corregido",
             data=csv,
-            file_name="archivo_optimizado.csv",
-            mime="text/csv",
+            file_name="resultado_seo.csv",
+            mime="text/csv"
         )
