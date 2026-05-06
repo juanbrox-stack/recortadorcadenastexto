@@ -3,32 +3,43 @@ import pandas as pd
 import io
 
 def recortar_limpio(texto, limite):
+    """
+    Recorta un texto de forma inteligente sin romper palabras 
+    y priorizando signos de puntuación.
+    """
     texto_str = str(texto).strip() if pd.notna(texto) else ""
     
     # REGLA: Si ya cumple el límite, no tocar nada
     if len(texto_str) <= limite:
         return texto_str
     
-    # Cortamos al límite para analizar
-    recorte_previo = texto_str[:limite]
+    # Tomamos una muestra ligeramente mayor para ver qué hay en el borde
+    # pero el corte final debe estar dentro del 'limite'
+    muestra = texto_str[:limite]
     
-    # Buscar último punto o coma
-    ultimo_punto = recorte_previo.rfind('.')
-    ultima_coma = recorte_previo.rfind(',')
-    
-    posicion_corte = max(ultimo_punto, ultima_coma)
-    
-    if posicion_corte != -1:
-        # Cortamos ANTES del signo y limpiamos espacios finales
-        return recorte_previo[:posicion_corte].strip()
-    else:
-        # Si no hay signos, buscamos el último espacio
-        ultimo_espacio = recorte_previo.rfind(' ')
-        if ultimo_espacio != -1:
-            return recorte_previo[:ultimo_espacio].strip()
-        return recorte_previo
+    # 1. Intentar cortar en el último punto (ideal para descripciones)
+    ultimo_punto = muestra.rfind('.')
+    # 2. Intentar cortar en la última coma (bueno para títulos)
+    ultima_coma = muestra.rfind(',')
+    # 3. Intentar cortar en el último espacio (mínimo aceptable)
+    ultimo_espacio = muestra.rfind(' ')
 
-# --- Interfaz ---
+    # Lógica de decisión de corte
+    if ultimo_punto != -1 and ultimo_punto > (limite * 0.8):
+        # Si hay un punto cerca del final, cortamos ahí (incluyendo el punto)
+        return muestra[:ultimo_punto + 1].strip()
+    
+    elif ultima_coma != -1 and ultima_coma > (limite * 0.8):
+        # Si hay una coma cerca del final, cortamos antes de la coma
+        return muestra[:ultima_coma].strip()
+    
+    elif ultimo_espacio != -1:
+        # Si no hay signos claros, cortamos en el último espacio
+        return muestra[:ultimo_espacio].strip()
+    
+    return muestra
+
+# --- Interfaz Streamlit ---
 st.set_page_config(page_title="Optimizador de Catálogo", page_icon="📦")
 st.title("📦 Generador de Títulos/Descripciones SEO")
 
@@ -46,23 +57,25 @@ if archivo:
     col_texto = st.selectbox("Selecciona la columna de Texto a recortar:", df_original.columns)
     
     if st.button("Procesar y generar Excel"):
-        # Creamos el nuevo DataFrame con la estructura solicitada
         df_resultado = pd.DataFrame()
         df_resultado['SKU_Referencia'] = df_original[col_sku]
-        df_resultado['Texto_Optimizado'] = df_original[col_texto].apply(lambda x: recortar_limpio(x, limite))
         
-        # Mostrar vista previa
-        st.subheader("Vista previa de las 2 columnas")
+        # Aplicamos la nueva lógica
+        df_resultado['Texto_Optimizado'] = df_original[col_texto].apply(
+            lambda x: recortar_limpio(x, limite)
+        )
+        
+        # Estadísticas de ayuda
+        st.subheader("Vista previa")
         st.dataframe(df_resultado.head(10))
         
-        # Lógica para descargar como EXCEL (.xlsx)
+        # Exportación
         buffer = io.BytesIO()
         with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
             df_resultado.to_excel(writer, index=False, sheet_name='Resultado')
-            # No es necesario writer.save() en las versiones nuevas de pandas con 'with'
         
         st.download_button(
-            label="⬇️ Descargar Excel (A: SKU, B: Texto)",
+            label="⬇️ Descargar Excel Optimizado",
             data=buffer.getvalue(),
             file_name="catalogo_optimizado.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
